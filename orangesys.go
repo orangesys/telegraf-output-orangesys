@@ -51,40 +51,9 @@ type Orangesys struct {
 }
 
 var sampleConfig = `
-  ## The HTTP or UDP URL for your Orangesys instance.  Each item should be
-  ## of the form:
-  ##   scheme "://" host [ ":" port]
-  ##
-  ## Multiple urls can be specified as part of the same cluster,
-  ## this means that only ONE of the urls will be written to each interval.
-  # urls = ["udp://localhost:8089"] # UDP endpoint example
-  urls = ["http://localhost:8086"] # required
-  ## The target database for metrics (telegraf will create it if not exists).
+  urls = ["https://<orangesys-url>"] # required
   database = "telegraf" # required
-
-  ## Name of existing retention policy to write to.  Empty string writes to
-  ## the default retention policy.
-  retention_policy = ""
-  ## Write consistency (clusters only), can be: "any", "one", "quorum", "all"
-  write_consistency = "any"
-
-  ## Write timeout (for the Orangesys client), formatted as a string.
-  ## If not provided, will default to 5s. 0s means no timeout (not recommended).
-  timeout = "5s"
-  # username = "telegraf"
-  # password = "metricsmetricsmetricsmetrics"
-  # jwt_token = "jwt_token"
-  ## Set the user agent for HTTP POSTs (can be useful for log differentiation)
-  # user_agent = "telegraf"
-  ## Set UDP payload size, defaults to Orangesys UDP Client default (512 bytes)
-  # udp_payload = 512
-
-  ## Optional SSL Config
-  # ssl_ca = "/etc/telegraf/ca.pem"
-  # ssl_cert = "/etc/telegraf/cert.pem"
-  # ssl_key = "/etc/telegraf/key.pem"
-  ## Use SSL but skip chain & host verification
-  # insecure_skip_verify = false
+  jwt_token = "jwt_token" # required
 `
 
 // Connect initiates the primary connection to the range of provided URLs
