@@ -15,3 +15,6 @@ jobs:
             sed -i '4i\t_ "github.com/influxdata/telegraf/plugins/outputs/orangesys"' \
             /go/src/github.com/influxdata/telegraf/plugins/outputs/all/all.go
             cd /go/src/github.com/influxdata/telegraf/
+            go fmt ./...
+            make
+            telegraf -version            
