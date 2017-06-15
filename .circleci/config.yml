@@ -17,7 +17,3 @@ jobs:
       - run:
           commnad: |
             cd /go/src/github.com/influxdata/telegraf/
-            go fmt ./...
-            make
-            go vet ./...
-            telegraf -version
