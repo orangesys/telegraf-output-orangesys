@@ -1,0 +1,17 @@
+machine:
+  go:
+    version: 1.8.1
+  services:
+    - docker
+    - memcached
+    - redis
+    - rabbitmq-server
+
+dependencies:
+  override:
+    - docker info
+
+test:
+  override:
+    - true
+#    - bash scripts/circle-test.sh
