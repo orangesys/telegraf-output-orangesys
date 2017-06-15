@@ -12,9 +12,9 @@ jobs:
           command: |
             mv /go/src/github.com/orangesys/telegraf-output-orangesys \
             /go/src/github.com/influxdata/telegraf/plugins/outputs/orangesys
-            sed -i '4i\t_ "github.com/influxdata/telegraf/plugins/outputs/orangesys"' \
+            sed -i '4i_ "github.com/influxdata/telegraf/plugins/outputs/orangesys"' \
             /go/src/github.com/influxdata/telegraf/plugins/outputs/all/all.go
             cd /go/src/github.com/influxdata/telegraf/
             go fmt ./...
             make
-            telegraf -version            
+            telegraf -version
