@@ -3,11 +3,11 @@ jobs:
   build:
     docker:
       - image: circleci/golang:1.8.3
-    working_directory: $HOME/telegraf-build
+    working_directory: /telegraf-build
 
     environment:
-      GOPATH: ~/telegraf-build
+      GOPATH: /telegraf-build
     steps:
       - checkout
-
+      - run: mkdir -p $GOPATH
       - run: go get -d github.com/influxdata/telegraf
