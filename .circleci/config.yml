@@ -5,5 +5,9 @@ jobs:
       - image: circleci/golang:1.8.3
     working_directory: $HOME/telegraf-build
 
+    environment:
+      GOPATH: $HOME/telegraf-build
     steps:
+      - checkout
+
       - run: go get -d github.com/influxdata/telegraf
