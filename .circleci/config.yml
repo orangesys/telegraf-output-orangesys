@@ -8,3 +8,9 @@ jobs:
     steps:
       - checkout
       - run: go get -d github.com/influxdata/telegraf
+      - run:
+          command: |
+            mv /go/src/github.com/orangesys/telegraf-output-orangesys \
+            /go/src/github.com/influxdata/telegraf/plugins/outputs/orangesys
+            sed -i '4i\t_ "github.com/influxdata/telegraf/plugins/outputs/orangesys"' \
+            /go/src/github.com/influxdata/telegraf/plugins/outputs/all/all.go
