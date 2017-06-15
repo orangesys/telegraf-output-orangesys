@@ -14,6 +14,4 @@ jobs:
             /go/src/github.com/influxdata/telegraf/plugins/outputs/orangesys
             sed -i '4i\t_ "github.com/influxdata/telegraf/plugins/outputs/orangesys"' \
             /go/src/github.com/influxdata/telegraf/plugins/outputs/all/all.go
-      - run:
-          commnad: |
             cd /go/src/github.com/influxdata/telegraf/
