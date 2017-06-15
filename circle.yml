@@ -3,9 +3,6 @@ machine:
     version: 1.8.1
   services:
     - docker
-    - memcached
-    - redis
-    - rabbitmq-server
 
 dependencies:
   override:
@@ -13,5 +10,4 @@ dependencies:
 
 test:
   override:
-    - true
-#    - bash scripts/circle-test.sh
+    - /bin/true
