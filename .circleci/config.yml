@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - images: circleci/golang:1.8.3
+      - image: circleci/golang:1.8.3
     working_directory: $HOME/telegraf-build
 
     steps:
