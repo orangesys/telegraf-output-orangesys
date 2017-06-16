@@ -10,6 +10,5 @@ jobs:
     steps:
       - run:
         name: get influxdata telegraf
-
         command: |
           go get -d github.com/influxdata/telegraf
