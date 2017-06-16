@@ -3,18 +3,13 @@ jobs:
   build:
     docker:
       - image: circleci/golang:1.8.3
-    working_directory: /go/src/github.com/orangesys/telegraf-output-orangesys
+    working_directory: ~/telegraf-build
+    environment:
+      GOPATH: ~/telegraf-build
 
     steps:
-      - checkout
-      - run: go get -d github.com/influxdata/telegraf
       - run:
-          command: |
-            mv /go/src/github.com/orangesys/telegraf-output-orangesys \
-            /go/src/github.com/influxdata/telegraf/plugins/outputs/orangesys
-            sed -i '4i_ "github.com/influxdata/telegraf/plugins/outputs/orangesys"' \
-            /go/src/github.com/influxdata/telegraf/plugins/outputs/all/all.go
-            cd /go/src/github.com/influxdata/telegraf/
-            go fmt ./...
-            make
-            telegraf -version
+        name: get influxdata telegraf
+
+        command: |
+          go get -d github.com/influxdata/telegraf
