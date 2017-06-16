@@ -8,7 +8,4 @@ jobs:
       GOPATH: ~/telegraf-build
 
     steps:
-      - run:
-        name: get influxdata telegraf
-        command: |
-          go get -d github.com/influxdata/telegraf
+      - run: go get -d github.com/influxdata/telegraf
