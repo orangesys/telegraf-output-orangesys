@@ -1,3 +1,6 @@
+# telegraf output orangesys
+[![GitHub release](https://img.shields.io/github/release/orangesys/telegraf-output-orangesys.svg)](https://github.com/orangesys/telegraf-output-orangesys/releases)
+
 # README #
 
 Telegraph plugin to push metrics on Orangesys
