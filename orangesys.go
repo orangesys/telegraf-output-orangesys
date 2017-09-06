@@ -34,6 +34,7 @@ type Orangesys struct {
 	WriteConsistency string
 	Timeout          internal.Duration
 	UDPPayload       int    `toml:"udp_payload"`
+	HTTPProxy        string `toml:"http_proxy"`
 	ContentEncoding  string `toml:"content_encoding"`
 
 	// Path to CA file
@@ -55,6 +56,9 @@ var sampleConfig = `
   urls = ["https://<orangesys-url>"] # required
   database = "telegraf" # required
   jwt_token = "jwt_token" # required
+
+  ## Compress each HTTP request payload using GZIP.
+  # content_encoding = "gzip"
 `
 
 // Connect initiates the primary connection to the range of provided URLs
