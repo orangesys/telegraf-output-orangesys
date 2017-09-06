@@ -33,7 +33,8 @@ type Orangesys struct {
 	RetentionPolicy  string
 	WriteConsistency string
 	Timeout          internal.Duration
-	UDPPayload       int `toml:"udp_payload"`
+	UDPPayload       int    `toml:"udp_payload"`
+	ContentEncoding  string `toml:"content_encoding"`
 
 	// Path to CA file
 	SSLCA string `toml:"ssl_ca"`
@@ -88,13 +89,14 @@ func (i *Orangesys) Connect() error {
 		default:
 			// If URL doesn't start with "udp", assume HTTP client
 			config := client.HTTPConfig{
-				URL:       u,
-				Timeout:   i.Timeout.Duration,
-				TLSConfig: tlsConfig,
-				UserAgent: i.UserAgent,
-				Username:  i.Username,
-				Password:  i.Password,
-				JwtToken:  i.JwtToken,
+				URL:             u,
+				Timeout:         i.Timeout.Duration,
+				TLSConfig:       tlsConfig,
+				UserAgent:       i.UserAgent,
+				Username:        i.Username,
+				Password:        i.Password,
+				JwtToken:        i.JwtToken,
+				ContentEncoding: i.ContentEncoding,
 			}
 			wp := client.WriteParams{
 				Database:        i.Database,
