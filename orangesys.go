@@ -1,41 +1,55 @@
 package orangesys
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
-	"strings"
+	"net/url"
 	"time"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/internal"
-	"github.com/influxdata/telegraf/metric"
-	"github.com/influxdata/telegraf/plugins/outputs"
+	"github.com/orangesys/telegraf-output-orangesys/client"
 
-	"github.com/influxdata/telegraf/plugins/outputs/orangesys/client"
+	"github.com/influxdata/telegraf/plugins/outputs"
+	"github.com/influxdata/telegraf/plugins/serializers/influx"
 )
 
 var (
-	// Quote Ident replacer.
-	qiReplacer = strings.NewReplacer("\n", `\n`, `\`, `\\`, `"`, `\"`)
+	defaultURL = "http://localhost:8086"
+
+	ErrMissingURL = errors.New("missing URL")
 )
+
+type Client interface {
+	Write(context.Context, []telegraf.Metric) error
+	CreateDatabase(ctx context.Context) error
+
+	URL() string
+	Database() string
+}
 
 // Orangesys struct is the primary data structure for the plugin
 type Orangesys struct {
 	// URL is only for backwards compatability
-	URL              string
-	URLs             []string `toml:"urls"`
-	Username         string
-	Password         string
-	JwtToken         string `toml:"jwt_token"`
-	Database         string
-	UserAgent        string
-	RetentionPolicy  string
-	WriteConsistency string
-	Timeout          internal.Duration
-	UDPPayload       int    `toml:"udp_payload"`
-	HTTPProxy        string `toml:"http_proxy"`
-	ContentEncoding  string `toml:"content_encoding"`
+	URL                  string
+	URLs                 []string `toml:"urls"`
+	Username             string
+	Password             string
+	JwtToken             string `toml:"jwt_token"`
+	Database             string
+	UserAgent            string
+	RetentionPolicy      string
+	WriteConsistency     string
+	Timeout              internal.Duration
+	UDPPayload           int               `toml:"udp_payload"`
+	HTTPProxy            string            `toml:"http_proxy"`
+	HTTPHeaders          map[string]string `toml:"http_headers"`
+	ContentEncoding      string            `toml:"content_encoding"`
+	SkipDatabaseCreation bool              `toml:"skip_database_creation"`
+	InfluxUintSupport    bool              `toml:"influx_uint_support"`
 
 	// Path to CA file
 	SSLCA string `toml:"ssl_ca"`
@@ -50,6 +64,8 @@ type Orangesys struct {
 	Precision string
 
 	clients []client.Client
+
+	CreateHTTPClientF func(config *HTTPConfig) (Client, error)
 }
 
 var sampleConfig = `
@@ -63,73 +79,62 @@ var sampleConfig = `
 
 // Connect initiates the primary connection to the range of provided URLs
 func (i *Orangesys) Connect() error {
-	var urls []string
+	ctx := context.Background()
+
+	urls := make([]string, 0, len(i.URLs))
 	urls = append(urls, i.URLs...)
 
-	// Backward-compatability with single Influx URL config files
-	// This could eventually be removed in favor of specifying the urls as a list
 	if i.URL != "" {
 		urls = append(urls, i.URL)
 	}
 
-	tlsConfig, err := internal.GetTLSConfig(
-		i.SSLCert, i.SSLKey, i.SSLCA, i.InsecureSkipVerify)
-	if err != nil {
-		return err
+	if len(urls) == 0 {
+		urls = append(urls, defaultURL)
+	}
+
+	i.serializer = influx.NewSerializer()
+
+	if i.InfluxUintSupport {
+		i.serializer.SetFieldTypeSupport(influx.UintSupport)
 	}
 
 	for _, u := range urls {
-		switch {
-		case strings.HasPrefix(u, "udp"):
-			config := client.UDPConfig{
-				URL:         u,
-				PayloadSize: i.UDPPayload,
-			}
-			c, err := client.NewUDP(config)
+		u, err := url.Parse(u)
+		if err != nil {
+			return fmt.Errorf("error parsing url [%s]: %v", u, err)
+		}
+
+		var proxy *url.URL
+		if len(i.HTTPProxy) > 0 {
+			proxy, err = url.Parse(i.HTTPProxy)
 			if err != nil {
-				return fmt.Errorf("Error creating UDP Client [%s]: %s", u, err)
+				return fmt.Errorf("error parsing proxy_url [%s]: %v", proxy, err)
 			}
+		}
+
+		switch u.Scheme {
+		case "http", "https", "unix":
+			c, err := i.httpClient(ctx, u, proxy)
+			if err != nil {
+				return err
+			}
+
 			i.clients = append(i.clients, c)
 		default:
-			// If URL doesn't start with "udp", assume HTTP client
-			config := client.HTTPConfig{
-				URL:             u,
-				Timeout:         i.Timeout.Duration,
-				TLSConfig:       tlsConfig,
-				UserAgent:       i.UserAgent,
-				Username:        i.Username,
-				Password:        i.Password,
-				JwtToken:        i.JwtToken,
-				ContentEncoding: i.ContentEncoding,
-			}
-			wp := client.WriteParams{
-				Database:        i.Database,
-				RetentionPolicy: i.RetentionPolicy,
-				Consistency:     i.WriteConsistency,
-			}
-			c, err := client.NewHTTP(config, wp)
-			if err != nil {
-				return fmt.Errorf("Error creating HTTP Client [%s]: %s", u, err)
-			}
-			i.clients = append(i.clients, c)
-
-			err = c.Query(fmt.Sprintf(`CREATE DATABASE "%s"`, qiReplacer.Replace(i.Database)))
-			if err != nil {
-				if !strings.Contains(err.Error(), "Status Code [403]") {
-					log.Println("I! Database creation failed: " + err.Error())
-				}
-				continue
-			}
+			return fmt.Errorf("unsupport scheme [%s]: %q", u, u.Scheme)
 		}
 	}
 
-	rand.Seed(time.Now().UnixNano())
 	return nil
 }
 
 // Close will terminate the session to the backend, returning error if an issue arises
 func (i *Orangesys) Close() error {
 	return nil
+}
+
+func (i *Orangesys) Description() string {
+	return "Configuration for sending metrics to InfluxDB"
 }
 
 // SampleConfig returns the formatted sample configuration for the plugin
@@ -145,49 +150,81 @@ func (i *Orangesys) Description() string {
 // Write will choose a random server in the cluster to write to until a successful write
 // occurs, logging each unsuccessful. If all servers fail, return error.
 func (i *Orangesys) Write(metrics []telegraf.Metric) error {
+	ctx := context.Background()
 
-	bufsize := 0
-	for _, m := range metrics {
-		bufsize += m.Len()
-	}
-
-	r := metric.NewReader(metrics)
-
-	// This will get set to nil if a successful write occurs
-	err := fmt.Errorf("Could not write to any Orangesys server in cluster")
-
+	var err error
 	p := rand.Perm(len(i.clients))
+
 	for _, n := range p {
-		if _, e := i.clients[n].WriteStream(r, bufsize); e != nil {
-			// If the database was not found, try to recreate it:
-			if strings.Contains(e.Error(), "database not found") {
-				errc := i.clients[n].Query(fmt.Sprintf(`CREATE DATABASE "%s"`, qiReplacer.Replace(i.Database)))
-				if errc != nil {
-					log.Printf("E! Error: Database %s not found and failed to recreate\n",
-						i.Database)
+		client := i.clients[n]
+		err = client.Write(ctx, metrics)
+		if err == nil {
+			return nil
+		}
+
+		switch apiError := err.(type) {
+		case *APIError:
+			if !i.SkipDatabaseCreation {
+				if apiError.Type == DatabaseNotFound {
+					err := client.CreateDatabase(ctx)
+					if err != nil {
+						log.Printf("E! [outputs.orangesys] when write to [%s]: database %q not found and failed to recreate",
+							client.URL(), client.Database())
+					}
 				}
 			}
-			if strings.Contains(e.Error(), "field type conflict") {
-				log.Printf("E! Field type conflict, dropping conflicted points: %s", e)
-				// setting err to nil, otherwise we will keep retrying and points
-				// w/ conflicting types will get stuck in the buffer forever.
-				err = nil
-				break
-			}
-			// Log write failure
-			log.Printf("E! Orangesys Output Error: %s", e)
-		} else {
-			err = nil
-			break
+		}
+		log.Printf("E! [outputs.influxdb]: when writing to [%s]: %v", client.URL(), err)
+	}
+	return errors.New("cloud not write any address")
+}
+
+func (i *Orangesys) httpClient(ctx context.Context, url *url.URL, proxy *url.URL) (Client, error) {
+	tlsConfig, err := internal.GetTLSConfig(
+		i.SSLCert, i.SSLKey, i.SSLCA, i.InsecureSkipVerify)
+	if err != nil {
+		return nil, err
+	}
+
+	config := &HTTPConfig{
+		URL:             url,
+		Timeout:         i.Timeout.Duration,
+		TLSConfig:       tlsConfig,
+		UserAgent:       i.UserAgent,
+		Username:        i.Username,
+		Password:        i.Password,
+		Proxy:           proxy,
+		ContentEncoding: i.ContentEncoding,
+		Headers:         i.HTTPHeaders,
+		Database:        i.Database,
+		JwtToken:        i.JwtToken,
+		RetentionPolicy: i.RetentionPolicy,
+		Consistency:     i.WriteConsistency,
+		Serializer:      i.serializer,
+	}
+
+	c, err := i.CreateHTTPClientF(config)
+	if err != nil {
+		return nil, fmt.Errorf("error creating HTTP client [%s]: %v", url, err)
+	}
+
+	if !i.SkipDatabaseCreation {
+		err = c.CreateDatabase(ctx)
+		if err != nil {
+			log.Printf("W! [outputs.influxdb] when writing to [%s]: database %q creation failed: %v",
+				c.URL(), c.Database(), err)
 		}
 	}
 
-	return err
+	return c, nil
 }
 
 func newInflux() *Orangesys {
 	return &Orangesys{
 		Timeout: internal.Duration{Duration: time.Second * 5},
+		CreateHTTPClientF: func(config *HTTPConfig) (Client, error) {
+			return NewHTTPClient(config)
+		},
 	}
 }
 
