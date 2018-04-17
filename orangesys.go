@@ -9,9 +9,9 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/docker/docker/client"
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/internal"
-	"github.com/orangesys/telegraf-output-orangesys/client"
 
 	"github.com/influxdata/telegraf/plugins/outputs"
 	"github.com/influxdata/telegraf/plugins/serializers/influx"
