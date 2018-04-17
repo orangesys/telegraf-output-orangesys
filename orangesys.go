@@ -146,11 +146,6 @@ func (i *Orangesys) SampleConfig() string {
 	return sampleConfig
 }
 
-// Description returns the human-readable function definition of the plugin
-func (i *Orangesys) Description() string {
-	return "Configuration for orangesys server to send metrics to"
-}
-
 // Write will choose a random server in the cluster to write to until a successful write
 // occurs, logging each unsuccessful. If all servers fail, return error.
 func (i *Orangesys) Write(metrics []telegraf.Metric) error {
