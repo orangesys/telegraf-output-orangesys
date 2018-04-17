@@ -1,234 +1,149 @@
-package orangesys
+package orangesys_test
 
 import (
-	"fmt"
-	"io"
+	"context"
 	"net/http"
-	"net/http/httptest"
 	"testing"
+	"time"
 
-	"github.com/influxdata/telegraf/plugins/outputs/orangesys/client"
-	"github.com/influxdata/telegraf/testutil"
-
-	"github.com/stretchr/testify/assert"
+	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/internal"
+	"github.com/influxdata/telegraf/plugins/outputs/orangesys"
+	"github.com/orangesys/telegraf/metric"
+	"github.com/orangesys/telegraf/plugins/outputs/influxdb"
 	"github.com/stretchr/testify/require"
 )
 
-func TestIdentQuoting(t *testing.T) {
-	var testCases = []struct {
-		database string
-		expected string
-	}{
-		{"x-y", `CREATE DATABASE "x-y"`},
-		{`x"y`, `CREATE DATABASE "x\"y"`},
-		{"x\ny", `CREATE DATABASE "x\ny"`},
-		{`x\y`, `CREATE DATABASE "x\\y"`},
-	}
-
-	for _, tc := range testCases {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			r.ParseForm()
-			q := r.Form.Get("q")
-			assert.Equal(t, tc.expected, q)
-
-			w.WriteHeader(http.StatusOK)
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintln(w, `{"results":[{}]}`)
-		}))
-		defer ts.Close()
-
-		i := Orangesys{
-			URLs:     []string{ts.URL},
-			Database: tc.database,
-		}
-
-		err := i.Connect()
-		require.NoError(t, err)
-		require.NoError(t, i.Close())
-	}
-}
-
-func TestUDPInflux(t *testing.T) {
-	i := Orangesys{
-		URLs: []string{"udp://localhost:8089"},
-	}
-
-	err := i.Connect()
-	require.NoError(t, err)
-	err = i.Write(testutil.MockMetrics())
-	require.NoError(t, err)
-	require.NoError(t, i.Close())
-}
-
-func TestHTTPInflux(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/write":
-			// test that database is set properly
-			if r.FormValue("db") != "test" {
-				w.WriteHeader(http.StatusTeapot)
-				w.Header().Set("Content-Type", "application/json")
-			}
-			// test that user agent is set properly
-			if r.UserAgent() != "telegraf" {
-				w.WriteHeader(http.StatusTeapot)
-				w.Header().Set("Content-Type", "application/json")
-			}
-			w.WriteHeader(http.StatusNoContent)
-			w.Header().Set("Content-Type", "application/json")
-		case "/query":
-			w.WriteHeader(http.StatusOK)
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintln(w, `{"results":[{}]}`)
-		}
-	}))
-	defer ts.Close()
-
-	i := newInflux()
-	i.URLs = []string{ts.URL}
-	i.Database = "test"
-	i.UserAgent = "telegraf"
-
-	err := i.Connect()
-	require.NoError(t, err)
-	err = i.Write(testutil.MockMetrics())
-	require.NoError(t, err)
-	require.NoError(t, i.Close())
-}
-
-func TestUDPConnectError(t *testing.T) {
-	i := Orangesys{
-		URLs: []string{"udp://foobar:8089"},
-	}
-
-	err := i.Connect()
-	require.Error(t, err)
-
-	i = Orangesys{
-		URLs: []string{"udp://localhost:9999999"},
-	}
-
-	err = i.Connect()
-	require.Error(t, err)
-}
-
-func TestHTTPConnectError_InvalidURL(t *testing.T) {
-	i := Orangesys{
-		URLs: []string{"http://foobar:8089"},
-	}
-
-	err := i.Connect()
-	require.Error(t, err)
-
-	i = Orangesys{
-		URLs: []string{"http://localhost:9999999"},
-	}
-
-	err = i.Connect()
-	require.Error(t, err)
-}
-
-func TestHTTPConnectError_DatabaseCreateFail(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/query":
-			w.WriteHeader(http.StatusNotFound)
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintln(w, `{"results":[{}],"error":"test error"}`)
-		}
-	}))
-	defer ts.Close()
-
-	i := Orangesys{
-		URLs:     []string{ts.URL},
-		Database: "test",
-	}
-
-	// database creation errors do not return an error from Connect
-	// they are only logged.
-	err := i.Connect()
-	require.NoError(t, err)
-	require.NoError(t, i.Close())
-}
-
-func TestHTTPError_DatabaseNotFound(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/write":
-			w.WriteHeader(http.StatusNotFound)
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintln(w, `{"results":[{}],"error":"database not found"}`)
-		case "/query":
-			w.WriteHeader(http.StatusNotFound)
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintln(w, `{"results":[{}],"error":"database not found"}`)
-		}
-	}))
-	defer ts.Close()
-
-	i := Orangesys{
-		URLs:     []string{ts.URL},
-		Database: "test",
-	}
-
-	err := i.Connect()
-	require.NoError(t, err)
-	err = i.Write(testutil.MockMetrics())
-	require.Error(t, err)
-	require.NoError(t, i.Close())
-}
-
-// field type conflict does not return an error, instead we
-func TestHTTPError_FieldTypeConflict(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/write":
-			w.WriteHeader(http.StatusNotFound)
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintln(w, `{"results":[{}],"error":"field type conflict: input field \"value\" on measurement \"test\" is type integer, already exists as type float dropped=1"}`)
-		}
-	}))
-	defer ts.Close()
-
-	i := Orangesys{
-		URLs:     []string{ts.URL},
-		Database: "test",
-	}
-
-	err := i.Connect()
-	require.NoError(t, err)
-	err = i.Write(testutil.MockMetrics())
-	require.NoError(t, err)
-	require.NoError(t, i.Close())
-}
-
 type MockClient struct {
-	writeStreamCalled int
-	contentLength     int
+	URLF            func() string
+	DatabaseF       func() string
+	JwtTokenF       func() string
+	WriteF          func(context.Context, []telegraf.Metric) error
+	CreateDatabaseF func(ctx context.Context) error
 }
 
-func (m *MockClient) Query(command string) error {
-	panic("not implemented")
+func (c *MockClient) URL() string {
+	return c.URLF()
 }
 
-func (m *MockClient) Write(b []byte) (int, error) {
-	panic("not implemented")
+func (c *MockClient) Database() string {
+	return c.DatabaseF()
 }
 
-func (m *MockClient) WriteWithParams(b []byte, params client.WriteParams) (int, error) {
-	panic("not implemented")
+func (c *MockClient) Write(ctx context.Context, metrics []telegraf.Metric) error {
+	return c.WriteF(ctx, metrics)
 }
 
-func (m *MockClient) WriteStream(b io.Reader, contentLength int) (int, error) {
-	m.writeStreamCalled++
-	m.contentLength = contentLength
-	return 0, nil
+func (c *MockClient) CreateDatabase(ctx context.Context) error {
+	return c.CreateDatabaseF(ctx)
 }
 
-func (m *MockClient) WriteStreamWithParams(b io.Reader, contentLength int, params client.WriteParams) (int, error) {
-	panic("not implemented")
+func TestDefaultURL(t *testing.T) {
+	var actual *orangesys.HTTPConfig
+	output := orangesys.InfluxDB{
+		CreateHTTPClientF: func(config *orangesys.HTTPConfig) (orangesys.Client, error) {
+			actual = config
+			return &MockClient{
+				CreateDatabaseF: func(ctx context.Context) error {
+					return nil
+				},
+			}, nil
+		},
+	}
+	err := output.Connect()
+	require.NoError(t, err)
+	require.Equal(t, "http://localhost:8086", actual.URL.String())
 }
 
-func (m *MockClient) Close() error {
-	panic("not implemented")
+func TestConnectHTTPConfig(t *testing.T) {
+	var actual *orangesys.HTTPConfig
+
+	output := orangesys.InfluxDB{
+		URLs:             []string{"http://localhost:8086"},
+		Database:         "telegraf",
+		RetentionPolicy:  "default",
+		WriteConsistency: "any",
+		JwtToken:         "not-empty",
+		Timeout:          internal.Duration{Duration: 5 * time.Second},
+		Username:         "guy",
+		Password:         "smiley",
+		UserAgent:        "telegraf",
+		HTTPProxy:        "http://localhost:8086",
+		HTTPHeaders: map[string]string{
+			"x": "y",
+		},
+		ContentEncoding:    "gzip",
+		InsecureSkipVerify: true,
+
+		CreateHTTPClientF: func(config *influxdb.HTTPConfig) (influxdb.Client, error) {
+			actual = config
+			return &MockClient{
+				CreateDatabaseF: func(ctx context.Context) error {
+					return nil
+				},
+			}, nil
+		},
+	}
+	err := output.Connect()
+	require.NoError(t, err)
+
+	require.Equal(t, output.URLs[0], actual.URL.String())
+	require.Equal(t, output.UserAgent, actual.UserAgent)
+	require.Equal(t, output.Timeout.Duration, actual.Timeout)
+	require.Equal(t, output.Username, actual.Username)
+	require.Equal(t, output.Password, actual.Password)
+	require.Equal(t, output.HTTPProxy, actual.Proxy.String())
+	require.Equal(t, output.HTTPHeaders, actual.Headers)
+	require.Equal(t, output.ContentEncoding, actual.ContentEncoding)
+	require.Equal(t, output.Database, actual.Database)
+	require.Equal(t, output.RetentionPolicy, actual.RetentionPolicy)
+	require.Equal(t, output.WriteConsistency, actual.Consistency)
+	require.NotNil(t, actual.TLSConfig)
+	require.NotNil(t, actual.Serializer)
+
+	require.Equal(t, output.Database, actual.Database)
+}
+
+func TestWriteRecreateDatabaseIfDatabaseNotFound(t *testing.T) {
+	output := orangesys.InfluxDB{
+		URLs: []string{"http://localhost:8086"},
+
+		CreateHTTPClientF: func(config *orangesys.HTTPConfig) (orangesys.Client, error) {
+			return &MockClient{
+				CreateDatabaseF: func(ctx context.Context) error {
+					return nil
+				},
+				WriteF: func(ctx context.Context, metrics []telegraf.Metric) error {
+					return &orangesys.APIError{
+						StatusCode:  http.StatusNotFound,
+						Title:       "404 Not Found",
+						Description: `database not found "telegraf"`,
+						Type:        orangesys.DatabaseNotFound,
+					}
+				},
+				URLF: func() string {
+					return "http://localhost:8086"
+
+				},
+			}, nil
+		},
+	}
+
+	err := output.Connect()
+	require.NoError(t, err)
+
+	m, err := metric.New(
+		"cpu",
+		map[string]string{},
+		map[string]interface{}{
+			"value": 42.0,
+		},
+		time.Unix(0, 0),
+	)
+	require.NoError(t, err)
+	metrics := []telegraf.Metric{m}
+
+	err = output.Write(metrics)
+	// We only have one URL, so we expect an error
+	require.Error(t, err)
 }
