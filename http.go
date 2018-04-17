@@ -102,6 +102,9 @@ type HTTPConfig struct {
 	RetentionPolicy string
 	Consistency     string
 
+	// JwtToken is jwt auth for the server with orangeysys
+	JwtToken string
+
 	InfluxUintSupport bool `toml:"influx_uint_support"`
 	Serializer        *influx.Serializer
 }
@@ -141,8 +144,14 @@ func NewHTTPClient(config *HTTPConfig) (*httpClient, error) {
 		userAgent = defaultUserAgent
 	}
 
+	jwtToken := config.JwtToken
+	if jwtToken == "" {
+		return nil, fmt.Errorf("JwtToken don's empty")
+	}
+
 	var headers = make(map[string]string, len(config.Headers)+1)
 	headers["User-Agent"] = userAgent
+	haeders["Authorization"] = "Bearer " + jwtToken
 	for k, v := range config.Headers {
 		headers[k] = v
 	}

@@ -136,8 +136,9 @@ func (i *Orangesys) Close() error {
 	return nil
 }
 
+// Description plugin output orangesys
 func (i *Orangesys) Description() string {
-	return "Configuration for sending metrics to InfluxDB"
+	return "Configuration for sending metrics to Orangesys"
 }
 
 // SampleConfig returns the formatted sample configuration for the plugin
