@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/docker/docker/client"
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/internal"
 
@@ -20,9 +19,11 @@ import (
 var (
 	defaultURL = "http://localhost:8086"
 
+	// ErrMissingURL is error wiht url
 	ErrMissingURL = errors.New("missing URL")
 )
 
+// Client is new orangeysys client
 type Client interface {
 	Write(context.Context, []telegraf.Metric) error
 	CreateDatabase(ctx context.Context) error
@@ -63,9 +64,11 @@ type Orangesys struct {
 	// Precision is only here for legacy support. It will be ignored.
 	Precision string
 
-	clients []client.Client
+	clients []Client
 
 	CreateHTTPClientF func(config *HTTPConfig) (Client, error)
+
+	serializer *influx.Serializer
 }
 
 var sampleConfig = `
