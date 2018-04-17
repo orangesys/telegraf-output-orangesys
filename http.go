@@ -29,7 +29,7 @@ const (
 const (
 	defaultRequestTimeout = time.Second * 5
 	defaultDatabase       = "telegraf"
-	defaultUserAgent      = "telegraf"
+	defaultUserAgent      = "orange"
 
 	errStringDatabaseNotFound      = "database not found"
 	errStringHintedHandoffNotEmpty = "hinted handoff queue not empty"
