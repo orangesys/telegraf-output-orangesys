@@ -151,7 +151,7 @@ func NewHTTPClient(config *HTTPConfig) (*httpClient, error) {
 
 	var headers = make(map[string]string, len(config.Headers)+1)
 	headers["User-Agent"] = userAgent
-	haeders["Authorization"] = "Bearer " + jwtToken
+	headers["Authorization"] = "Bearer " + jwtToken
 	for k, v := range config.Headers {
 		headers[k] = v
 	}
