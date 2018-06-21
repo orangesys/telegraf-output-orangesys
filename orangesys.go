@@ -2,6 +2,7 @@ package orangesys
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -11,7 +12,7 @@ import (
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/internal"
-
+	"github.com/influxdata/telegraf/internal/tls"
 	"github.com/influxdata/telegraf/plugins/outputs"
 	"github.com/influxdata/telegraf/plugins/serializers/influx"
 )
@@ -51,6 +52,7 @@ type Orangesys struct {
 	ContentEncoding      string            `toml:"content_encoding"`
 	SkipDatabaseCreation bool              `toml:"skip_database_creation"`
 	InfluxUintSupport    bool              `toml:"influx_uint_support"`
+	tls.ClientConfig
 
 	// Path to CA file
 	SSLCA string `toml:"ssl_ca"`
@@ -179,8 +181,7 @@ func (i *Orangesys) Write(metrics []telegraf.Metric) error {
 }
 
 func (i *Orangesys) httpClient(ctx context.Context, url *url.URL, proxy *url.URL) (Client, error) {
-	tlsConfig, err := internal.GetTLSConfig(
-		i.SSLCert, i.SSLKey, i.SSLCA, i.InsecureSkipVerify)
+	tlsConfig, err := i.ClientConfig.TLSConfig()
 	if err != nil {
 		return nil, err
 	}
